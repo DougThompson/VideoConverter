@@ -46,10 +46,31 @@ class MainFrame( gui.MainFrameBase ):
 		if len(self.m_tbxInputFolder.Value) > 0:
 			self.addVideoFiles(self.m_tbxInputFolder.Value)
 		
-	def m_mniOpenInputFolderClick( self, event ):
+		self.populateEncodeOptions(config, self.m_choEncodeOptions)
+		self.m_choEncodeOptions.SetSelection(0)
+		self.m_chkWriteFileOnly.Set3StateValue(wx.CHK_CHECKED)
+	
+	def populateEncodeOptions(self, config, choiceControl):
+		'''Populate a Choice control with all five encode options'''
+		for i in xrange(1, 6):
+			choiceControl.Append(self.getEncodeOption(config, i))
+		
+	def getEncodeOption(self, config, index):
+		'''Get a specific encode option base on index'''
+		
+		# Compile the config string name and strip the results
+		# if the encode option is empty, then replace with a user-friendly
+		# phrase to help bring attention to the missing item
+		option = config['handbrakeOptions' + str(index)].strip()
+		if len(option) == 0:
+			option = '<none defined>'
+		
+		return option
+			
+	def m_mniOpenInputFolderClick(self, event):
 		self.browseInputFolder()
 	
-	def m_mniOpenDestinationFolderClick( self, event ):
+	def m_mniOpenDestinationFolderClick(self, event):
 		self.browseOutputFolder()
 	
 	def m_btnBrowseInputClick(self, event):
@@ -59,12 +80,21 @@ class MainFrame( gui.MainFrameBase ):
 		self.browseOutputFolder()
 		
 	def m_btnProcessClick( self, event ):
+		'''Begin the Processing event'''
+		self.encodePath = ''	
 		# First, make sure at least one video is selected, if not alert the user
 		if len(self.m_lstVideos.GetSelections()) > 0:
-			# Start a new thread to convert the video via Handbrake
-			thread = threading.Thread(target=self.run)
-			thread.setDaemon(True)
-			thread.start()
+			# Next, make sure at least one video encoding option is selected, if not alert the user
+			option = self.m_choEncodeOptions.GetStringSelection()
+			if option == '<none defined>':
+				wx.MessageBox('Please select at least one defined encoding option.', 'No Encode Option Defined!', wx.OK | wx.ICON_INFORMATION)
+			else:
+				self.encodePath = self.saveEncodeFile()
+
+				# Start a new thread to convert the video via Handbrake
+				thread = threading.Thread(target=self.run)
+				thread.setDaemon(True)
+				thread.start()
 		else:
 			wx.MessageBox('Please select at least one video to process.', 'No Videos Selected!', wx.OK | wx.ICON_INFORMATION)
 					
@@ -74,13 +104,19 @@ class MainFrame( gui.MainFrameBase ):
 	
 	def m_mniAboutClick(self, event):
 		'''Simple About message box'''
-		wx.MessageBox("Video Converter by Doug Thompson.","Video Converter")
+		wx.MessageBox('Video Converter by Doug Thompson.','Video Converter')
 	
 	def m_mniPreferencesClick(self, event):
 		'''Open the Preferences Dialog box'''
 		dlg = PreferenceDialog.PreferencesDialog(self)
 		dlg.ShowModal()
 		dlg.Destroy()
+
+		# Load the Config instance and populate the form
+		config = ConfigObj('config.ini')['Values']
+		self.m_choEncodeOptions.Clear()		
+		self.populateEncodeOptions(config, self.m_choEncodeOptions)
+		self.m_choEncodeOptions.SetSelection(0)
 	
 	def m_txtInputFolderBlur( self, event ):
 		'''Update the video files after user leaves Input Textbox'''
@@ -89,7 +125,7 @@ class MainFrame( gui.MainFrameBase ):
 	
 	def browseInputFolder(self):
 		'''Browse for the input folder of movies to convert'''
-		dialog = wx.DirDialog(self, "Choose a Input directory:", style=wx.DD_DEFAULT_STYLE | wx.DD_NEW_DIR_BUTTON)
+		dialog = wx.DirDialog(self, 'Choose a Input directory:', style=wx.DD_DEFAULT_STYLE | wx.DD_NEW_DIR_BUTTON)
 		
 		# Set default directory to the value in the Textbox, if it exists
 		if os.path.exists(self.m_tbxInputFolder.Value):
@@ -105,7 +141,7 @@ class MainFrame( gui.MainFrameBase ):
 	
 	def browseOutputFolder(self):
 		'''Browse for the output folder of movies to convert'''
-		dialog = wx.DirDialog(self, "Choose a root Output directory:", style=wx.DD_DEFAULT_STYLE | wx.DD_NEW_DIR_BUTTON)
+		dialog = wx.DirDialog(self, 'Choose a root Output directory:', style=wx.DD_DEFAULT_STYLE | wx.DD_NEW_DIR_BUTTON)
 		
 		# Set default directory to the value in the Textbox, if it exists
 		if os.path.exists(self.m_tbxDestFolder.Value):
@@ -134,22 +170,23 @@ class MainFrame( gui.MainFrameBase ):
 	    '''
 		
 		fileList = []
-		for fname in os.listdir(dir_name):
-			dirfile = os.path.join(dir_name, fname)
-			if os.path.isfile(dirfile):
-				# The item is a file, so check to see if it is to be filtered
-				if not args:
-					# No filters have been passed, so add the file to the list
-					fileList.append(dirfile)
-				else:
-					# One or more filters have been passed, so check the extensions 
-					if os.path.splitext(dirfile)[1][1:].lower() in args:
+		if os.path.exists(dir_name):
+			for fname in os.listdir(dir_name):
+				dirfile = os.path.join(dir_name, fname)
+				if os.path.isfile(dirfile):
+					# The item is a file, so check to see if it is to be filtered
+					if not args:
+						# No filters have been passed, so add the file to the list
 						fileList.append(dirfile)
-						
-			# recursively access file names in sub-directories
-			elif os.path.isdir(dirfile) and subdir:
-				fileList.extend(self.dirEntries(dirfile, subdir, *args))
-				
+					else:
+						# One or more filters have been passed, so check the extensions 
+						if os.path.splitext(dirfile)[1][1:].lower() in args:
+							fileList.append(dirfile)
+							
+				# recursively access file names in sub-directories
+				elif os.path.isdir(dirfile) and subdir:
+					fileList.extend(self.dirEntries(dirfile, subdir, *args))
+							
 		return fileList
 
 	def addVideoFiles(self, path):
@@ -157,7 +194,7 @@ class MainFrame( gui.MainFrameBase ):
 		
 		# Grab all videos in the directory and its subs.  This makes it easy to 
 		# pass just the AVCHD folder rather than drilling down.
-		fileList = self.dirEntries(path, True, 'mts', 'avi', 'mt2s', 'mpg', 'mpeg')
+		fileList = self.dirEntries(path, True, 'mts', 'avi', 'mt2s', 'mpg', 'mpeg', 'm4v', 'mp4')
 		self.m_lstVideos.Clear()
 		for fname in fileList:
 			self.m_lstVideos.Append(fname)
@@ -173,10 +210,24 @@ class MainFrame( gui.MainFrameBase ):
 	def setStatus(self, text):
 		'''Set the Status Bar text'''
 		self.m_statusBar.SetStatusText(text)
+	
+	def saveEncodeFile(self):
+		'''Get location and name for encode file'''
+		path = ''
+		dialog = wx.FileDialog(self, message='Save encode file as ...', defaultFile='encode.sh', style=wx.SAVE)
 		
+		if dialog.ShowModal() == wx.ID_OK:
+			path = dialog.GetPath()
+		
+		dialog.Destroy()
+		
+		return path
+			
 	def run(self):
 		'''Thread for executing the long running Handbrake conversion'''
 		
+		encodeFile = []
+		encodeFile.append('#! /usr/bin/env sh\n')
 		for fname in [self.m_lstVideos.GetString(idx) for idx in self.m_lstVideos.GetSelections()]:
 			# First, clear the Output Textbox -- This will (hopefull) keep it from overflowing
 			# on multiple file conversions
@@ -187,66 +238,85 @@ class MainFrame( gui.MainFrameBase ):
 				# Get the Handbrake config values
 				config = ConfigObj('config.ini')['Values']
 				handbrakeCli = config['handbrakeCli']
-				handbrakeOptions = config['handbrakeOptions']
-				
+				handbrakeOptions = self.m_choEncodeOptions.GetStringSelection()
+
 				# Get the timestamp information on the file so that it can be set
 				# to the original time of the filming rather than the time of the
 				# conversion -- handy for keeping the chronological order.
 				cTime = time.ctime(os.path.getmtime(sourceVideo))
 				createTime = time.strptime(cTime)
-				newCreateTime = time.strftime("%y%m%d%H%M.%S", createTime)
+				newCreateTime = time.strftime('%y%m%d%H%M.%S', createTime)
 				
 				# Build the destination folder and check to see if the file name is numeric
-				destVideoFolder = os.path.join(self.m_tbxDestFolder.Value, time.strftime("%Y-%m-%d", createTime))
 				newVideoName = os.path.basename(fname).split('.')[0]
+				videoType = os.path.basename(fname).split('.')[1]
+
+				# Build the new file name using the date and the newVideoName as a base
+				### TODO: work out the file extension from the HandBrakeCLI options...
 				if newVideoName.isnumeric():
 					newVideoName = str(int(newVideoName))
-				
+					destVideoFolder = os.path.join(self.m_tbxDestFolder.Value, time.strftime('%Y-%m-%d', createTime))
+					destVideoName = time.strftime('%Y%m%d', createTime) + '_' + newVideoName + '.m4v'
+				else:
+					destVideoFolder = self.m_tbxDestFolder.Value
+					destVideoName = newVideoName + '.mp4'
+
 				# If the output folder does not exist, then create it
 				if os.path.exists(destVideoFolder) == False:
 					os.makedirs(destVideoFolder)
-				
-				# Build the new file name using the date and the newVideoName as a base
-				destVideoName = time.strftime("%Y%m%d", createTime) + '_' + newVideoName + '.m4v'
+
 				destVideo = os.path.join(destVideoFolder, destVideoName)
-				
-				# Set the threaded call to update the Status Bar
-				wx.CallAfter(self.setStatus, 'Processing: ' + destVideoName)
-				
+								
 				# Build the Handbrake command and set its parameters
 				handbrakeCmd = '\"%s\" -i \"%s\" -o \"%s\" %s' % (handbrakeCli, sourceVideo, destVideo, handbrakeOptions)
 				
-				# Create the process and set the PIPE and STDOUT to grab the output								
-				proc = subprocess.Popen(handbrakeCmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+				if self.m_chkWriteFileOnly.IsChecked():
+					encodeFile.append(handbrakeCmd + '\n')
+				else:
+					# Set the threaded call to update the Status Bar
+					wx.CallAfter(self.setStatus, 'Processing: ' + destVideoName)
 					
-				# Currently always show Output -- Setting this to False will stop the process from firing at all
-				showOutput = True
-				if showOutput:
-					# Set the output buffer and start reading from the proc's STDOUT
-					outBuffer = []
-					while 1:
-						# Read one character at a time and only update the screen
-						# on newlines.  This will help performance, especially on
-						# very long running conversions.  The more text in the Textbox,
-						# the slower it will update.
-						char = proc.stdout.read(1)
-						if char == '\r' or char == '\n':
-							outBuffer.append(char)
-							wx.CallAfter(self.appendText, ''.join(outBuffer) )
-							outBuffer = []
-						else:
-							outBuffer.append(char)
+					# Create the process and set the PIPE and STDOUT to grab the output								
+					proc = subprocess.Popen(handbrakeCmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 						
-						# Check to see if Handbrake has exited.
-						# If yes, then break out of the loop
-						curOutput = self.m_tbxOutput.GetValue()
-						if curOutput.find('has exited') >= 0:
-							break
-				
-				# Give Handbrake a brief moment to release the file
-				# and update its timestamp using another Popen call
-				time.sleep(5)
-				touchCmd = 'touch -mt ' + newCreateTime + ' \"%s\"' % (destVideo)
-				proc = subprocess.Popen(touchCmd, shell=True).stdout
+					# Currently always show Output -- Setting this to False will stop the process from firing at all
+					showOutput = True
+					if showOutput:
+						# Set the output buffer and start reading from the proc's STDOUT
+						outBuffer = []
+						while 1:
+							# Read one character at a time and only update the screen
+							# on newlines.  This will help performance, especially on
+							# very long running conversions.  The more text in the Textbox,
+							# the slower it will update.
+							char = proc.stdout.read(1)
+							if char == '\r' or char == '\n':
+								outBuffer.append(char)
+								wx.CallAfter(self.appendText, ''.join(outBuffer) )
+								outBuffer = []
+							else:
+								outBuffer.append(char)
+							
+							# Check to see if Handbrake has exited.
+							# If yes, then break out of the loop
+							curOutput = self.m_tbxOutput.GetValue()
+							if curOutput.find('has exited') >= 0:
+								break
+					
+					# Give Handbrake a brief moment to release the file
+					# and update its timestamp using another Popen call
+					time.sleep(5)
+					touchCmd = 'touch -mt ' + newCreateTime + ' \"%s\"' % (destVideo)
+					proc = subprocess.Popen(touchCmd, shell=True).stdout
+		
+		if len(encodeFile) > 1:
+			wx.CallAfter(self.setStatus, 'Done.')
+
+			if len(self.encodePath) == 0:
+				self.encodePath = os.path.join(destVideoFolder, 'encode.sh')
 			
-		self.m_statusBar.SetStatusText('Done!')	
+			encfile = open(self.encodePath, 'w')
+			encfile.writelines(encodeFile)
+			encfile.close()
+		else:	
+			self.m_statusBar.SetStatusText('Done!')	

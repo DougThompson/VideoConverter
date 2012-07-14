@@ -22,7 +22,7 @@ class PreferencesDialog(wx.Dialog):
         Initialize the dialog
         '''
 
-        wx.Dialog.__init__(self, parentFrame, wx.ID_ANY, 'Preferences', size=(900,200))
+        wx.Dialog.__init__(self, parentFrame, wx.ID_ANY, 'Preferences', size=(900,310))
         self.CenterOnParent()
         self.createWidgets()
  
