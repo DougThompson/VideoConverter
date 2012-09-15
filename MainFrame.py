@@ -89,7 +89,8 @@ class MainFrame( gui.MainFrameBase ):
 			if option == '<none defined>':
 				wx.MessageBox('Please select at least one defined encoding option.', 'No Encode Option Defined!', wx.OK | wx.ICON_INFORMATION)
 			else:
-				self.encodePath = self.saveEncodeFile()
+				if self.m_chkWriteFileOnly.IsChecked():
+					self.encodePath = self.saveEncodeFile()
 
 				# Start a new thread to convert the video via Handbrake
 				thread = threading.Thread(target=self.run)
@@ -272,6 +273,7 @@ class MainFrame( gui.MainFrameBase ):
 				
 				if self.m_chkWriteFileOnly.IsChecked():
 					encodeFile.append(handbrakeCmd + '\n')
+					encodeFile.append('touch -mt ' + newCreateTime + ' \"%s\"' % (destVideo) + '\n')
 				else:
 					# Set the threaded call to update the Status Bar
 					wx.CallAfter(self.setStatus, 'Processing: ' + destVideoName)
